@@ -1,0 +1,246 @@
+---
+title: "Abalone"
+author: "Angela JACINTO"
+date: "2023-09-06"
+output: html_document
+---
+```{r setup, include=FALSE}
+setwd("/Users/angelajacinto/Desktop/STAT2402/assignment1")
+df <- read.table(file="/Users/angelajacinto/Desktop/STAT2402/assignment1/abalone.txt", header=TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+library(GGally)
+library(MASS)
+library(broom)
+library(knitr)
+library(dplyr)
+```
+
+```{r}
+summary(df)
+str(df)
+
+# Converting the 'Sex' column from character type to factor for efficient data handling and analysis
+df$Sex <- as.factor(df$Sex)
+
+# Markdown formatted table of the first 10 rows of df with numeric values rounded to 4 decimal places
+kable(df[1:10,], digits = 4,format = 'markdown') 
+```
+
+
+```{r}
+# Extracting numeric columns
+numeric_vars <- select_if(df, is.numeric)
+numeric_vars
+
+# Calculate min, max, mean, and median
+summary_stats <- data.frame(
+  Min = apply(numeric_vars, 2, min),
+  Max = apply(numeric_vars, 2, max),
+  Mean = apply(numeric_vars, 2, mean),
+  Median = apply(numeric_vars, 2, median)
+)
+
+print(summary_stats)
+
+# Correlation matrix for numeric variables
+cor_matrix <- cor(numeric_vars)
+print(cor_matrix)
+
+
+# Obtaining count of categorical variable
+sex_counts <- table(df$Sex)
+print(sex_counts)
+```
+
+
+```{r}
+# Fitting a linear model to Rings including all second order interaction terms
+full_model <- lm(Rings ~ .^2, data = df)
+summary(full_model)
+
+# Reducing `full_model` using the stepAIC procedure 
+backward_model <- stepAIC(full_model, direction = "backward", trace = TRUE)
+summary(backward_model)
+```
+
+```{r}
+# Selected model with lowest AIC score  
+aic_model <- lm(Rings ~ Sex + Length + Diameter + Height + Wholewt + Shuckedwt + 
+    Viscerawt + Shellwt + Sex:Length + Sex:Height + Sex:Wholewt + 
+    Sex:Shuckedwt + Sex:Viscerawt + Length:Diameter + Length:Wholewt + 
+    Length:Shuckedwt + Diameter:Wholewt + Height:Wholewt + Height:Shuckedwt + 
+    Wholewt:Shuckedwt + Wholewt:Viscerawt + Shuckedwt:Viscerawt + 
+    Shuckedwt:Shellwt + Viscerawt:Shellwt, df)
+summary(aic_model)
+AIC(aic_model)
+
+#Residual Plot 
+resplot <- ggplot(aic_model, aes(x = aic_model$fitted.values, y = aic_model$residuals)) + geom_point()
+resplot <- resplot + xlab("Fitted Values") + ylab("Residuals")
+resplot
+```
+Based on the residual plot, it shows non-linearity in the data causing this model to be inadequate. 
+
+```{r}
+refined_model <- lm(Rings ~ Sex + Length + Diameter + Height + Wholewt + 
+    Shuckedwt + Viscerawt + Shellwt + Sex:Length + 
+    Sex:Shuckedwt + Length:Diameter + 
+    Length:Wholewt + Length:Shuckedwt + Diameter:Wholewt + Height:Wholewt + 
+    Height:Shuckedwt + Wholewt:Shuckedwt + Wholewt:Viscerawt + 
+    Shuckedwt:Viscerawt + Shuckedwt:Shellwt, 
+    data = df)
+
+summary(refined_model)
+
+#Residual Plot
+resplot <- ggplot(refined_model, aes(x = refined_model$fitted.values, y = refined_model$residuals)) + geom_point()
+resplot <- resplot + xlab("Fitted Values") + ylab("Residuals")
+resplot
+
+#Histogram
+refined_hist <- ggplot(data.frame(resid = rstandard(refined_model)), aes(x = resid)) +
+  geom_histogram(breaks = seq(-6, 6, by = 1), fill = "light blue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Standardized Residuals for Refined Model", x = "Standardized Residuals", y = "Count")
+refined_hist
+
+
+#Normal Probability Plot
+refined_resid_data <- data.frame(resid = rstandard(refined_model))
+
+refined_npp <- ggplot(refined_resid_data, aes(sample = resid)) +
+  geom_qq(line = "s", color = "blue") + 
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(title = "Normal Probability Plot for Refined Model", 
+       y = "Standardized Residuals", 
+       x = "Normal Scores")
+print(refined_npp)
+```
+We removed the interaction terms, `sex:wholewt`, `Sex:Viscerawt`, `Sex:Height`, and `Viscerawt:Shellwt` to further refine the model. However, it produces similar results with the aic_model. 
+The histogram may not directly indicate non-linearity but the slight skewness to the right indicates potential outliers that the model may not predict well. It also indicates a bimodal distribution with two peaks, which is not expected of a normal distribution of residuals and suggests that the data is not well-represented by a single linear model. 
+
+```{r}
+log_model <- lm(log(Rings) ~ Sex + log(Length) + log(Diameter) + Height + log(Wholewt) + 
+    log(Shuckedwt) + log(Viscerawt) + log(Shellwt) + Sex:Height + 
+    Sex:log(Wholewt) + Sex:log(Shuckedwt) + log(Length):log(Diameter) + 
+    Height:log(Wholewt) + Height:log(Shuckedwt), data = df)
+
+summary(log_model)
+model_aic <- AIC(log_model)
+model_aic
+
+#Residual Plot
+resplot_log <- ggplot(log_model, aes(x = log_model$fitted.values, y = log_model$residuals)) + geom_point()
+resplot_log <- resplot_log + xlab("Fitted Values") + ylab("Residuals")
+resplot_log <- resplot_log + ggtitle("Log Transformed Residual Plot") + 
+  theme(plot.title = element_text(hjust = 0.5, face="bold", size=20))
+resplot_log <- resplot_log + 
+  theme(axis.title.x = element_text(face="bold", size=18),
+        axis.title.y = element_text(face="bold", size=18))
+resplot_log
+
+#Histogram
+log_hist <- ggplot(data.frame(resid = rstandard(log_model)), aes(x = resid)) +
+  geom_histogram(breaks = seq(-6, 6, by = 1), fill = "light blue", color = "black", alpha = 0.7) +
+  labs(title = "Log Transformed Histogram of Standardized Residuals", x = "Standardized Residuals", y = "Count") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 10),
+        axis.title.x = element_text(face = "bold", size = 8),
+        axis.title.y = element_text(face = "bold", size = 8))
+log_hist
+
+#Normal Probability Plot
+log_resid_data <- data.frame(resid = rstandard(log_model))
+
+log_npp <- ggplot(log_resid_data, aes(sample = resid)) +
+  geom_qq(line = "s", color = "blue") + 
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(title = "Log Transformed Normal Probability Plot", 
+       y = "Standardized Residuals", 
+       x = "Normal Scores") +
+       theme(plot.title = element_text(face = "bold", size = 10, hjust = 0.5),
+        axis.title.x = element_text(face = "bold", size = 8),
+        axis.title.y = element_text(face = "bold", size = 8))
+print(log_npp)
+```
+The AIC score of the log model shows a better fit compared to the previous model, `aic_model`. 
+
+
+```{r}
+sqrt_model <- lm(sqrt(Rings) ~ Sex + sqrt(Length) + sqrt(Diameter) + sqrt(Height) + sqrt(Wholewt) + 
+    sqrt(Shuckedwt) + sqrt(Viscerawt) + sqrt(Shellwt) + 
+    Sex:sqrt(Length) + 
+    Sex:sqrt(Shuckedwt) + sqrt(Length):sqrt(Diameter) + 
+    sqrt(Diameter):sqrt(Wholewt) + 
+    sqrt(Height):sqrt(Wholewt) + 
+    sqrt(Height):sqrt(Shuckedwt) + sqrt(Wholewt):sqrt(Shuckedwt) + sqrt(Wholewt):sqrt(Viscerawt) + 
+    sqrt(Shuckedwt):sqrt(Viscerawt) + sqrt(Shuckedwt):sqrt(Shellwt), 
+    data = df)
+summary(sqrt_model)
+
+model_aic <- AIC(sqrt_model)
+model_aic
+
+
+#Residual Plot
+resplot_sqrt <- ggplot(sqrt_model, aes(x = sqrt_model$fitted.values, y = sqrt_model$residuals)) + geom_point()
+resplot_sqrt <- resplot_sqrt + xlab("Fitted Values") + ylab("Residuals")
+resplot_sqrt
+
+#Histogram
+sqrt_hist <- ggplot(data.frame(resid = rstandard(sqrt_model)), aes(x = resid)) +
+  geom_histogram(breaks = seq(-6, 6, by = 1), fill = "light blue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Standardized Residuals for Sqrt Model", x = "Standardized Residuals", y = "Count")
+print(sqrt_hist)
+
+#Normal Probability Plot 
+sqrt_resid_data <- data.frame(resid = rstandard(sqrt_model))
+
+sqrt_npp <- ggplot(sqrt_resid_data, aes(sample = resid)) +
+  geom_qq(line = "s", color = "blue") + 
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(title = "Normal Probability Plot for Sqrt Model", 
+       y = "Standardized Residuals", 
+       x = "Normal Scores")
+print(sqrt_npp)
+
+```
+
+
+```{r}
+# Saving plots 
+combined_plot <- arrangeGrob(resplot, resplot_log, resplot_sqrt, ncol=1)
+ggsave("combined_plot.png", plot = combined_plot, width = 15, height = 15)
+
+combined_hist <- arrangeGrob(refined_hist, log_hist, sqrt_hist, ncol=1)
+ggsave("combined_hist.png", plot = combined_hist, width = 15, height = 15)
+
+combined_npp <- arrangeGrob(refined_npp, log_npp, sqrt_npp, ncol=1)
+ggsave("combined_npp.png", plot = combined_npp, width = 15, height = 15)
+
+# Assuming you already have your data frames: refined_table_df, log_table_df, sqrt_table_df
+# Convert them to grobs
+refined_grob <- tableGrob(refined_table)
+log_grob <- tableGrob(log_table)
+sqrt_grob <- tableGrob(sqrt_table)
+
+# Combine the grobs
+combined_grob <- arrangeGrob(refined_grob, log_grob, sqrt_grob, ncol=1)
+
+# Save the combined grobs as a PNG
+ggsave("combined_table.png", plot = combined_grob, width = 15, height = 15)
+
+```
+
+```{r}
+a <- ggsave("resplot_log.png", plot = resplot_log, width = 15, height = 15, units = "in")
+ggsave(filename = "hist_log.png", plot = log_hist, width = 7, height = 5)
+ggsave("log_npp.png", plot = log_npp, width = 6, height = 6)
+
+ggsave("sqrt_npp.png", plot = sqrt_npp, width = 6, height = 6)
+```
+
+
